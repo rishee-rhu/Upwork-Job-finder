@@ -41,25 +41,26 @@ function normalize(r, source, observedAt) {
   if (hourly && !(hmin || hmax)) { const ns = (String(hourly).replace(/,/g, "").match(/[\d.]+/g) || []).map(Number); if (ns.length) { hmin = ns[0]; hmax = ns[ns.length - 1]; } }
   const budget = num(first(r, "budget.amount", "fixedPrice", "fixed_price", "amount.amount", "budget", "amount"));
   const jt = String(first(r, "jobType", "job_type", "type", "paymentType") || "").toLowerCase();
+  if (jt.includes("hour") && !(hmin || hmax) && typeof r.budget === "string") { const ns = (r.budget.replace(/,/g, "").match(/[\d.]+/g) || []).map(Number); if (ns.length) { hmin = ns[0]; hmax = ns[ns.length - 1]; } }
   const type = jt.includes("hour") || hmin || hmax ? "hourly" : (jt.includes("fix") || budget ? "fixed" : null);
   let skills = first(r, "skills", "tags", "attrs") || [];
   if (typeof skills === "string") skills = skills.split(",").map(s => s.trim()).filter(Boolean);
   skills = skills.map(s => typeof s === "string" ? s : String(first(s, "name", "prettyName", "prefLabel") || ""));
-  let locs = first(r, "allowedLocations", "allowed_locations", "preferredLocations", "locations") || [];
+  let locs = first(r, "allowedApplicantCountries", "allowedLocations", "allowed_locations", "preferredLocations", "locations") || [];
   if (typeof locs === "string") locs = locs.split(",").map(s => s.trim()).filter(Boolean);
   const scraped = parseDate(first(r, "scrapedAt", "scraped_at", "crawledAt", "fetchedAt"));
   return {
     url, id: jobId(url) || url.split("?")[0],
     title: String(first(r, "title", "jobTitle", "name") || ""),
     description: String(first(r, "description", "snippet", "body", "jobDescription") || ""),
-    postedAt: parseDate(first(r, "posted_at", "postedAt", "publishedOn", "publishedAt", "createdOn", "createdAt", "date", "postedOn", "posted", "publishTime",
+    postedAt: parseDate(first(r, "absoluteDate", "posted_at", "postedAt", "publishedOn", "publishedAt", "createdOn", "createdAt", "date", "postedOn", "posted", "publishTime",
       "publishedDate", "postedDate", "datePosted", "date_posted", "createdDateTime", "postedTime", "posted_on", "absoluteDate", "time", "renewedOn", "createTime")),
     type, hmin, hmax, budget: type === "fixed" ? budget : null, skills, locs,
     client: {
-      country: first(r, "client.country", "clientCountry", "client_country", "client.location.country", "buyer.location.country", "country"),
+      country: first(r, "clientLocation", "client.country", "clientCountry", "client_country", "client.location.country", "buyer.location.country", "country"),
       verified: bool(first(r, "client.paymentVerified", "paymentVerified", "payment_verified", "client.payment_verified", "buyer.isPaymentMethodVerified", "client.isPaymentVerified")),
       spent: num(first(r, "client.totalSpent", "clientTotalSpent", "total_spent", "client.total_spent", "buyer.stats.totalCharges.amount", "client.spent")),
-      hireRate: num(first(r, "client.hireRate", "hireRate", "hire_rate", "client.hire_rate")),
+      hireRate: num(first(r, "clientHireRatePercent", "client.hireRate", "hireRate", "hire_rate", "client.hire_rate")),
       hires: num(first(r, "client.hires", "clientHires", "client.totalHires", "buyer.stats.totalJobsWithHires")),
       posted: num(first(r, "client.jobsPosted", "jobsPosted", "client.jobs_posted", "client.totalJobs", "buyer.jobs.postedCount")),
       rating: num(first(r, "client.rating", "clientRating", "client.feedback", "buyer.stats.score")),
@@ -69,7 +70,7 @@ function normalize(r, source, observedAt) {
       proposals: num(first(r, "proposals", "proposalsCount", "totalApplicants", "applicants", "activity.proposals", "proposalsTier")),
       interviewing: num(first(r, "interviewing", "activity.interviewing", "totalInterviewing")),
       invites: num(first(r, "invitesSent", "invites_sent", "activity.invitesSent")),
-      hires: num(first(r, "hires", "activity.hires", "totalHired")),
+      hires: num(first(r, "hires", "activity.hires", "totalHired")) ?? (r.hasHired === true ? 1 : null),
       needed: num(first(r, "freelancersNeeded", "freelancers_needed", "activity.freelancersNeeded", "numberOfPositionsToHire")),
     },
     closedFlag: bool(first(r, "isPrivate", "private", "isClosed", "closed")) || /closed|private|cancel/i.test(String(first(r, "status", "jobStatus") || "")),
@@ -287,7 +288,7 @@ async function runQuery(q, actor, tpl, limit, signal) {
   const d = { query: q, steps: [] }; DIAG.queries.push(d);
   const callProps = await schemaProps("call-actor");
   d.schemas = { "call-actor": callProps ? Object.keys(callProps) : "unavailable" };
-  const input = JSON.parse(tpl.replaceAll("{query}", q.replace(/"/g, '\\"')).replace(/"\{limit\}"/g, String(limit)));
+  const input = JSON.parse(tpl.replaceAll("{qurl}", encodeURIComponent('"' + q + '"')).replaceAll("{query}", q.replace(/"/g, '\\"')).replace(/"\{limit\}"/g, String(limit)));
   const args = {};
   args[pickKey(callProps, [/^actor$/i, /actor(id|name)?$/i], "actor")] = actor;
   args[pickKey(callProps, [/^input$/i, /input/i], "input")] = input;

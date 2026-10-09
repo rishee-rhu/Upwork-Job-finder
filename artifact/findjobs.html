@@ -291,10 +291,10 @@ pre.log{font:12px/1.5 var(--mono);background:var(--wash);border-radius:10px;padd
   <div class="dr">
     <h2 id="drTitle">Settings <button class="btn ghost" id="drClose" aria-label="Close">Close</button></h2>
     <div id="drApify"></div>
-    <div class="field"><label for="actor">Apify scraper (actor ID)</label><input id="actor" placeholder="username/upwork-jobs-scraper" autocomplete="off"><div class="note">From the scraper's Apify Store page.</div></div>
+    <div class="field"><label for="actor">Apify scraper (actor ID)</label><input id="actor" placeholder="neatrat/upwork-job-scraper" autocomplete="off"><div class="note">Default: neatrat/upwork-job-scraper (tested, about $0.0035 per job).</div></div>
     <div class="field"><label for="perQuery">Jobs per search</label><input id="perQuery" type="number" min="5" max="100" value="25"></div>
     <div class="field"><label for="maxResults">Max matches to show</label><input id="maxResults" type="number" min="1" max="30" value="10"></div>
-    <div class="field"><label for="inputTpl">Scraper input template</label><textarea id="inputTpl" spellcheck="false"></textarea><div class="note">Must match your scraper's input. <code>{query}</code> and <code>{limit}</code> get filled in.</div></div>
+    <div class="field"><label for="inputTpl">Scraper input template</label><textarea id="inputTpl" spellcheck="false"></textarea><div class="note">Must match your scraper's input. <code>{qurl}</code> (exact-phrase search), <code>{query}</code> and <code>{limit}</code> get filled in.</div></div>
     <div class="row"><button class="btn primary" id="btnCheck">Check Apify connection</button><button class="btn" id="btnPerms" hidden>Open permissions</button></div>
     <details class="adv"><summary>Last run details</summary><div class="row" style="margin:10px 0"><button class="btn" id="btnDiag">Copy run details</button><span class="note">Each hunt's details are also saved with this page, so Claude can read them if you ask in chat.</span></div><pre class="log" id="log">No run yet.</pre></details>
   </div>
@@ -308,13 +308,16 @@ pre.log{font:12px/1.5 var(--mono);background:var(--wash);border-radius:10px;padd
 "use strict";
 const EXAMPLES = {"Pooja Ganechari": {"name": "Pooja Ganechari", "positioning": "AI-Assisted Content Writer & Strategist for D2C Brands (India)", "country": "India", "years_experience": null, "languages": ["English", "Hindi"], "domains": ["recruitment", "HR & administration", "family interior business (admin/correspondence)", "D2C e-commerce (target niche, no client work yet)"], "strengths": ["clear, warm written and spoken communication (cited by employers)", "research and keyword-style thinking", "translating a client's needs into compelling descriptions (from recruiting)", "consistency: posted on LinkedIn 16 days straight in Jan 2026 with genuine engagement", "coordination and multi-stakeholder management"], "evidence": ["Post-graduation in HR & Administration, Tata Institute of Social Sciences (TISS)", "Worked as a recruiter: gathered client requirements and wrote job descriptions that attracted the right candidates", "Role at Angel One, hired for communication skills", "Wrote formal tender letters and banking correspondence for her father's interior business", "Posted on LinkedIn for 16 consecutive days in January 2026 and got real engagement", "Uses ChatGPT, Google Docs, MS Word, Canva (basic), WordPress (basic), Zoom", "Based in Bandra, Mumbai, close to many Indian D2C brand founders"], "weak_or_unproven": ["Any paid or published client writing work", "Portfolio samples or case studies with metrics", "D2C / e-commerce industry knowledge (conversion benchmarks, category psychology)", "SEO tools (Ahrefs, Semrush, Search Console) and ranking results", "Shopify, Klaviyo, Mailchimp, Google Analytics", "Ad copy performance (CTR) results", "Native-level commercial English copy (dossier flags written English needs refinement)", "Recent employment: last professional role 2016 (10-year gap)", "Technical / software skills"], "tools": ["ChatGPT", "Google Docs", "Microsoft Word", "Canva (basic)", "WordPress (basic)", "Grammarly", "Zoom"], "differentiators": ["recruiting background + writing: job descriptions, HR, careers and recruitment-marketing content", "Mumbai-based writer for Indian D2C brands (local access, Hindi + English)", "HR/TISS education: HR and workplace topics written by someone trained in the field"], "search_queries": ["product description writer", "D2C content writer", "ecommerce product descriptions", "Shopify product descriptions", "SEO blog writer", "blog post writer India", "skincare content writer", "fashion product descriptions", "jewellery product descriptions", "supplement blog writer", "AI content editing", "ChatGPT content editor", "content writer India", "email copywriter ecommerce", "brand voice writer", "HR content writer", "recruitment blog writer", "job description writer", "Hindi English content writer"], "allow_commission": false, "allow_calls": true, "min_hourly": null, "min_fixed": null, "upwork": null}, "Somya Kumar": {"name": "Somya Kumar", "positioning": "AI-Powered Sales & Lead Generation Consultant", "country": "India", "years_experience": 12, "languages": ["English", "Hindi"], "domains": ["healthcare", "medical records / case management", "IT sales", "locum doctor recruiting", "mortgage lead generation"], "strengths": ["closing", "client-facing sales", "recruiting", "outbound lead generation", "managing a 7-8 person lead-gen team"], "evidence": ["~12 years of US/UK/Europe-facing client work", "Healthcare medical records and case-management background", "Locum doctor recruiting including compliance checks", "IT sales experience", "Built and ran a 7-8 person lead-generation team", "Closing is the strongest stated skill", "Has worked on priced-per-result (pay-per-lead) arrangements"], "weak_or_unproven": ["Recent public case studies with metrics", "Advanced AI engineering", "Data engineering", "Cold-email infrastructure at scale (domains, warmup, deliverability)", "Large recent SaaS portfolio", "Advanced automation builds"], "tools": ["LinkedIn", "CRM pipelines", "basic AI writing tools"], "differentiators": ["healthcare + SDR/sales", "recruiting/staffing + outbound business development", "lead generation + closing", "US/UK-facing sales delivered from India"], "search_queries": ["lead generation", "B2B lead generation", "cold email", "email outreach", "appointment setter", "appointment setting", "SDR", "BDR", "outbound sales", "business development", "prospecting", "sales closer", "LinkedIn lead generation", "AI lead generation", "sales automation", "Apollo", "Sales Navigator", "healthcare lead generation", "healthcare sales", "medical staffing", "medical recruiting", "locum recruiting", "staffing lead generation", "healthcare appointment setter", "recruiting business development"], "allow_commission": true, "allow_calls": true, "min_hourly": null, "min_fixed": null, "upwork": null}};
 const APIFY = "Apify";
-const DEFAULT_TPL = JSON.stringify({ query: "{query}", maxItems: "{limit}" }, null, 1);
+const DEFAULT_ACTOR = "neatrat/upwork-job-scraper";
+const DEFAULT_TPL = JSON.stringify({ rawUrl: "https://www.upwork.com/nx/search/jobs/?q={qurl}&sort=recency&per_page=50", maxJobAge: { value: 72, unit: "hours" } }, null, 1);
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const store = {
   get(k, d) { try { const v = localStorage.getItem("fj." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem("fj." + k, JSON.stringify(v)); } catch {} },
 };
+// Settings saved before these defaults existed pointed at nothing that worked; move them over once.
+if (!store.get("v5", false)) { if (!store.get("actor", "")) store.set("actor", DEFAULT_ACTOR); const t = store.get("inputTpl", ""); if (!t || /"query": "\{query\}",\s*"maxItems"/.test(t)) store.set("inputTpl", DEFAULT_TPL); store.set("v5", true); }
 let sample = null, mcp = null, downloads = null, permissions = null, db = null, apifyCheck = null;
 let profile = null, lastResult = null, runCtl = null, filter = "all";
 let saved = new Set(store.get("saved", []));
@@ -376,7 +379,7 @@ async function checkApify(userAsked) {
 }
 let apifyOk = false;
 function renderSetup(state, text) {
-  const steps = `<ol><li>Open claude.ai → <b>Settings → Connectors → Add custom connector</b>.</li><li>Name it <code>Apify</code>, URL <code>https://mcp.apify.com</code>, save.</li><li>Press <b>Connect</b> and sign in to Apify. Your key stays with Apify and Claude, never in this page.</li><li>Paste your Upwork scraper's ID in Settings, then check the connection.</li></ol>`;
+  const steps = `<ol><li>Open claude.ai → <b>Settings → Connectors → Add custom connector</b>.</li><li>Name it <code>Apify</code>, URL <code>https://mcp.apify.com</code>, save.</li><li>Press <b>Connect</b> and sign in to Apify. Your key stays with Apify and Claude, never in this page.</li><li>Come back here and press <b>Check again</b>. The Upwork scraper is already set up.</li></ol>`;
   const box = state === "ok" ? "" : `<div class="setup"><h3>${state === "missing" ? "Connect Apify to start hunting (one time, 2 minutes)" : "Apify needs attention"}</h3>${text ? `<p style="margin:4px 0">${esc(text)}</p>` : ""}${state === "missing" || state === "off" ? steps : ""}<div class="row"><button class="btn primary" data-act="drawer">Open settings</button><button class="btn" data-act="check">Check again</button></div></div>`;
   $("setupBox").innerHTML = box;
   $("drApify").innerHTML = state === "ok" ? `<div class="alert info">Apify is connected.</div>` : box.replace('<button class="btn primary" data-act="drawer">Open settings</button>', "");
@@ -564,25 +567,26 @@ function normalize(r, source, observedAt) {
   if (hourly && !(hmin || hmax)) { const ns = (String(hourly).replace(/,/g, "").match(/[\d.]+/g) || []).map(Number); if (ns.length) { hmin = ns[0]; hmax = ns[ns.length - 1]; } }
   const budget = num(first(r, "budget.amount", "fixedPrice", "fixed_price", "amount.amount", "budget", "amount"));
   const jt = String(first(r, "jobType", "job_type", "type", "paymentType") || "").toLowerCase();
+  if (jt.includes("hour") && !(hmin || hmax) && typeof r.budget === "string") { const ns = (r.budget.replace(/,/g, "").match(/[\d.]+/g) || []).map(Number); if (ns.length) { hmin = ns[0]; hmax = ns[ns.length - 1]; } }
   const type = jt.includes("hour") || hmin || hmax ? "hourly" : (jt.includes("fix") || budget ? "fixed" : null);
   let skills = first(r, "skills", "tags", "attrs") || [];
   if (typeof skills === "string") skills = skills.split(",").map(s => s.trim()).filter(Boolean);
   skills = skills.map(s => typeof s === "string" ? s : String(first(s, "name", "prettyName", "prefLabel") || ""));
-  let locs = first(r, "allowedLocations", "allowed_locations", "preferredLocations", "locations") || [];
+  let locs = first(r, "allowedApplicantCountries", "allowedLocations", "allowed_locations", "preferredLocations", "locations") || [];
   if (typeof locs === "string") locs = locs.split(",").map(s => s.trim()).filter(Boolean);
   const scraped = parseDate(first(r, "scrapedAt", "scraped_at", "crawledAt", "fetchedAt"));
   return {
     url, id: jobId(url) || url.split("?")[0],
     title: String(first(r, "title", "jobTitle", "name") || ""),
     description: String(first(r, "description", "snippet", "body", "jobDescription") || ""),
-    postedAt: parseDate(first(r, "posted_at", "postedAt", "publishedOn", "publishedAt", "createdOn", "createdAt", "date", "postedOn", "posted", "publishTime",
+    postedAt: parseDate(first(r, "absoluteDate", "posted_at", "postedAt", "publishedOn", "publishedAt", "createdOn", "createdAt", "date", "postedOn", "posted", "publishTime",
       "publishedDate", "postedDate", "datePosted", "date_posted", "createdDateTime", "postedTime", "posted_on", "absoluteDate", "time", "renewedOn", "createTime")),
     type, hmin, hmax, budget: type === "fixed" ? budget : null, skills, locs,
     client: {
-      country: first(r, "client.country", "clientCountry", "client_country", "client.location.country", "buyer.location.country", "country"),
+      country: first(r, "clientLocation", "client.country", "clientCountry", "client_country", "client.location.country", "buyer.location.country", "country"),
       verified: bool(first(r, "client.paymentVerified", "paymentVerified", "payment_verified", "client.payment_verified", "buyer.isPaymentMethodVerified", "client.isPaymentVerified")),
       spent: num(first(r, "client.totalSpent", "clientTotalSpent", "total_spent", "client.total_spent", "buyer.stats.totalCharges.amount", "client.spent")),
-      hireRate: num(first(r, "client.hireRate", "hireRate", "hire_rate", "client.hire_rate")),
+      hireRate: num(first(r, "clientHireRatePercent", "client.hireRate", "hireRate", "hire_rate", "client.hire_rate")),
       hires: num(first(r, "client.hires", "clientHires", "client.totalHires", "buyer.stats.totalJobsWithHires")),
       posted: num(first(r, "client.jobsPosted", "jobsPosted", "client.jobs_posted", "client.totalJobs", "buyer.jobs.postedCount")),
       rating: num(first(r, "client.rating", "clientRating", "client.feedback", "buyer.stats.score")),
@@ -592,7 +596,7 @@ function normalize(r, source, observedAt) {
       proposals: num(first(r, "proposals", "proposalsCount", "totalApplicants", "applicants", "activity.proposals", "proposalsTier")),
       interviewing: num(first(r, "interviewing", "activity.interviewing", "totalInterviewing")),
       invites: num(first(r, "invitesSent", "invites_sent", "activity.invitesSent")),
-      hires: num(first(r, "hires", "activity.hires", "totalHired")),
+      hires: num(first(r, "hires", "activity.hires", "totalHired")) ?? (r.hasHired === true ? 1 : null),
       needed: num(first(r, "freelancersNeeded", "freelancers_needed", "activity.freelancersNeeded", "numberOfPositionsToHire")),
     },
     closedFlag: bool(first(r, "isPrivate", "private", "isClosed", "closed")) || /closed|private|cancel/i.test(String(first(r, "status", "jobStatus") || "")),
@@ -810,7 +814,7 @@ async function runQuery(q, actor, tpl, limit, signal) {
   const d = { query: q, steps: [] }; DIAG.queries.push(d);
   const callProps = await schemaProps("call-actor");
   d.schemas = { "call-actor": callProps ? Object.keys(callProps) : "unavailable" };
-  const input = JSON.parse(tpl.replaceAll("{query}", q.replace(/"/g, '\\"')).replace(/"\{limit\}"/g, String(limit)));
+  const input = JSON.parse(tpl.replaceAll("{qurl}", encodeURIComponent('"' + q + '"')).replaceAll("{query}", q.replace(/"/g, '\\"')).replace(/"\{limit\}"/g, String(limit)));
   const args = {};
   args[pickKey(callProps, [/^actor$/i, /actor(id|name)?$/i], "actor")] = actor;
   args[pickKey(callProps, [/^input$/i, /input/i], "input")] = input;
@@ -888,12 +892,12 @@ $("btnRun").onclick = async () => {
   if (!sample) { bail("Claude can't run in this view, so jobs can't be checked. Open the page in claude.ai."); return; }
   const file = $("jobsFile").files[0];
   const qs = queries().filter(x => x.on).map(x => x.q);
-  const actor = $("actor").value.trim();
+  const actor = $("actor").value.trim() || DEFAULT_ACTOR;
   if (!file) {
     if (!mcp || !apifyOk) { await checkApify(false); if (!apifyOk) { bail("Apify isn't connected yet, so nothing was searched. Follow the steps in the box above, then press Check again."); return; } }
-    if (!actor) { bail("Paste your Apify scraper ID in Settings first. Nothing was searched.", "drawer"); return; }
+    if (!actor) { $("actor").value = DEFAULT_ACTOR; saveSettings(); }
     if (!qs.length) { bail("Switch on at least one search."); return; }
-    try { JSON.parse($("inputTpl").value.replaceAll("{query}", "x").replace(/"\{limit\}"/g, "1")); } catch { bail("The scraper input template in Settings isn't valid JSON.", "drawer"); return; }
+    try { JSON.parse($("inputTpl").value.replaceAll("{qurl}", "x").replaceAll("{query}", "x").replace(/"\{limit\}"/g, "1")); } catch { bail("The scraper input template in Settings isn't valid JSON.", "drawer"); return; }
   }
   runCtl = new AbortController(); const signal = runCtl.signal;
   $("btnRun").disabled = true; $("btnStop").hidden = false; $("log").textContent = ""; $("feed").innerHTML = ""; $("blips").innerHTML = "";

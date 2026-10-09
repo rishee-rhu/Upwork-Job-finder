@@ -37,3 +37,19 @@ def test_reports_render(profile, now, mk):
     h = report.to_html(res, audit=True)
     assert "<table>" in h and "Healthcare SDR" in h
     assert json.loads(report.to_json(res))["shortlist"][0]["verified"] is True
+
+
+def test_normalize_neatrat_upwork_scraper():
+    # Shape returned by neatrat/upwork-job-scraper (observed on a real run).
+    raw = {"id": "2108518942858345691", "title": "Customer Support Specialist", "description": "Shopify store support.",
+           "url": "https://www.upwork.com/jobs/Customer-Support_~022108518942858345691/?referrer_url_path=/nx/search/jobs/",
+           "budget": "3 - 5", "relativeDate": "Posted 5 hours ago", "absoluteDate": "2026-10-09T07:24:33.498Z",
+           "jobType": "Hourly", "paymentVerified": True, "tags": ["Shopify", "Email Support"], "clientLocation": "USA",
+           "clientTotalSpent": 1684, "clientRating": 5, "clientHireRatePercent": 75, "proposals": 41,
+           "hasHired": False, "allowedApplicantCountries": None}
+    j = normalize(raw, "apify")
+    assert j.job_id == "22108518942858345691"
+    assert (j.job_type, j.hourly_min, j.hourly_max) == ("hourly", 3, 5)
+    assert j.posted_at.hour == 7 and j.client.country == "USA" and j.client.hire_rate == 75
+    assert j.activity.proposals == 41 and j.activity.hires is None and j.skills == ["Shopify", "Email Support"]
+    assert normalize({**raw, "hasHired": True}, "apify").activity.hires == 1

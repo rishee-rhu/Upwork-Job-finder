@@ -291,10 +291,10 @@ pre.log{font:12px/1.5 var(--mono);background:var(--wash);border-radius:10px;padd
   <div class="dr">
     <h2 id="drTitle">Settings <button class="btn ghost" id="drClose" aria-label="Close">Close</button></h2>
     <div id="drApify"></div>
-    <div class="field"><label for="actor">Apify scraper (actor ID)</label><input id="actor" placeholder="username/upwork-jobs-scraper" autocomplete="off"><div class="note">From the scraper's Apify Store page.</div></div>
+    <div class="field"><label for="actor">Apify scraper (actor ID)</label><input id="actor" placeholder="neatrat/upwork-job-scraper" autocomplete="off"><div class="note">Default: neatrat/upwork-job-scraper (tested, about $0.0035 per job).</div></div>
     <div class="field"><label for="perQuery">Jobs per search</label><input id="perQuery" type="number" min="5" max="100" value="25"></div>
     <div class="field"><label for="maxResults">Max matches to show</label><input id="maxResults" type="number" min="1" max="30" value="10"></div>
-    <div class="field"><label for="inputTpl">Scraper input template</label><textarea id="inputTpl" spellcheck="false"></textarea><div class="note">Must match your scraper's input. <code>{query}</code> and <code>{limit}</code> get filled in.</div></div>
+    <div class="field"><label for="inputTpl">Scraper input template</label><textarea id="inputTpl" spellcheck="false"></textarea><div class="note">Must match your scraper's input. <code>{qurl}</code> (exact-phrase search), <code>{query}</code> and <code>{limit}</code> get filled in.</div></div>
     <div class="row"><button class="btn primary" id="btnCheck">Check Apify connection</button><button class="btn" id="btnPerms" hidden>Open permissions</button></div>
     <details class="adv"><summary>Last run details</summary><div class="row" style="margin:10px 0"><button class="btn" id="btnDiag">Copy run details</button><span class="note">Each hunt's details are also saved with this page, so Claude can read them if you ask in chat.</span></div><pre class="log" id="log">No run yet.</pre></details>
   </div>
@@ -308,13 +308,16 @@ pre.log{font:12px/1.5 var(--mono);background:var(--wash);border-radius:10px;padd
 "use strict";
 const EXAMPLES = /*EXAMPLES*/{};
 const APIFY = "Apify";
-const DEFAULT_TPL = JSON.stringify({ query: "{query}", maxItems: "{limit}" }, null, 1);
+const DEFAULT_ACTOR = "neatrat/upwork-job-scraper";
+const DEFAULT_TPL = JSON.stringify({ rawUrl: "https://www.upwork.com/nx/search/jobs/?q={qurl}&sort=recency&per_page=50", maxJobAge: { value: 72, unit: "hours" } }, null, 1);
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const store = {
   get(k, d) { try { const v = localStorage.getItem("fj." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem("fj." + k, JSON.stringify(v)); } catch {} },
 };
+// Settings saved before these defaults existed pointed at nothing that worked; move them over once.
+if (!store.get("v5", false)) { if (!store.get("actor", "")) store.set("actor", DEFAULT_ACTOR); const t = store.get("inputTpl", ""); if (!t || /"query": "\{query\}",\s*"maxItems"/.test(t)) store.set("inputTpl", DEFAULT_TPL); store.set("v5", true); }
 let sample = null, mcp = null, downloads = null, permissions = null, db = null, apifyCheck = null;
 let profile = null, lastResult = null, runCtl = null, filter = "all";
 let saved = new Set(store.get("saved", []));
@@ -376,7 +379,7 @@ async function checkApify(userAsked) {
 }
 let apifyOk = false;
 function renderSetup(state, text) {
-  const steps = `<ol><li>Open claude.ai → <b>Settings → Connectors → Add custom connector</b>.</li><li>Name it <code>Apify</code>, URL <code>https://mcp.apify.com</code>, save.</li><li>Press <b>Connect</b> and sign in to Apify. Your key stays with Apify and Claude, never in this page.</li><li>Paste your Upwork scraper's ID in Settings, then check the connection.</li></ol>`;
+  const steps = `<ol><li>Open claude.ai → <b>Settings → Connectors → Add custom connector</b>.</li><li>Name it <code>Apify</code>, URL <code>https://mcp.apify.com</code>, save.</li><li>Press <b>Connect</b> and sign in to Apify. Your key stays with Apify and Claude, never in this page.</li><li>Come back here and press <b>Check again</b>. The Upwork scraper is already set up.</li></ol>`;
   const box = state === "ok" ? "" : `<div class="setup"><h3>${state === "missing" ? "Connect Apify to start hunting (one time, 2 minutes)" : "Apify needs attention"}</h3>${text ? `<p style="margin:4px 0">${esc(text)}</p>` : ""}${state === "missing" || state === "off" ? steps : ""}<div class="row"><button class="btn primary" data-act="drawer">Open settings</button><button class="btn" data-act="check">Check again</button></div></div>`;
   $("setupBox").innerHTML = box;
   $("drApify").innerHTML = state === "ok" ? `<div class="alert info">Apify is connected.</div>` : box.replace('<button class="btn primary" data-act="drawer">Open settings</button>', "");
@@ -545,12 +548,12 @@ $("btnRun").onclick = async () => {
   if (!sample) { bail("Claude can't run in this view, so jobs can't be checked. Open the page in claude.ai."); return; }
   const file = $("jobsFile").files[0];
   const qs = queries().filter(x => x.on).map(x => x.q);
-  const actor = $("actor").value.trim();
+  const actor = $("actor").value.trim() || DEFAULT_ACTOR;
   if (!file) {
     if (!mcp || !apifyOk) { await checkApify(false); if (!apifyOk) { bail("Apify isn't connected yet, so nothing was searched. Follow the steps in the box above, then press Check again."); return; } }
-    if (!actor) { bail("Paste your Apify scraper ID in Settings first. Nothing was searched.", "drawer"); return; }
+    if (!actor) { $("actor").value = DEFAULT_ACTOR; saveSettings(); }
     if (!qs.length) { bail("Switch on at least one search."); return; }
-    try { JSON.parse($("inputTpl").value.replaceAll("{query}", "x").replace(/"\{limit\}"/g, "1")); } catch { bail("The scraper input template in Settings isn't valid JSON.", "drawer"); return; }
+    try { JSON.parse($("inputTpl").value.replaceAll("{qurl}", "x").replaceAll("{query}", "x").replace(/"\{limit\}"/g, "1")); } catch { bail("The scraper input template in Settings isn't valid JSON.", "drawer"); return; }
   }
   runCtl = new AbortController(); const signal = runCtl.signal;
   $("btnRun").disabled = true; $("btnStop").hidden = false; $("log").textContent = ""; $("feed").innerHTML = ""; $("blips").innerHTML = "";
