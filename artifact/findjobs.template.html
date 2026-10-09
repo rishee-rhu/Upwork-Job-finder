@@ -139,6 +139,7 @@ details>summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
   <div class="row"><button class="primary" id="btnRun">Find jobs</button><button id="btnStop" hidden>Stop</button><span class="note" id="runNote"></span></div>
   <div class="msg" id="msg3" role="status"></div>
   <pre id="log" hidden></pre>
+  <div class="row" id="diagRow" hidden><button id="btnDiag">Copy run details</button><span class="note">Paste these into the chat if a run finds nothing.</span></div>
 </section>
 
 <section class="step" aria-labelledby="h4s" id="results">
@@ -326,6 +327,7 @@ function num(v) {
 function bool(v) { if (v == null) return null; if (typeof v === "boolean") return v; return /^(true|yes|1|verified)$/i.test(String(v).trim()); }
 function jobId(url) { const m = String(url || "").match(/~0?([0-9a-z]{6,})/i); return m ? m[1].toLowerCase() : null; }
 function normalize(r, source, observedAt) {
+  for (const k of ["job", "jobDetails", "node", "data", "item"]) if (r[k] && typeof r[k] === "object" && !Array.isArray(r[k])) r = { ...r[k], ...r };
   let url = first(r, "url", "link", "jobUrl", "job_url", "jobLink", "href");
   if (!url) { const cipher = first(r, "ciphertext", "cipherText", "jobCiphertext", "uid"); if (cipher && /^~/.test(cipher)) url = "https://www.upwork.com/jobs/" + cipher; }
   if (!url) return null;
@@ -347,7 +349,8 @@ function normalize(r, source, observedAt) {
     url, id: jobId(url) || url.split("?")[0],
     title: String(first(r, "title", "jobTitle", "name") || ""),
     description: String(first(r, "description", "snippet", "body", "jobDescription") || ""),
-    postedAt: parseDate(first(r, "posted_at", "postedAt", "publishedOn", "publishedAt", "createdOn", "createdAt", "date", "postedOn", "posted", "publishTime")),
+    postedAt: parseDate(first(r, "posted_at", "postedAt", "publishedOn", "publishedAt", "createdOn", "createdAt", "date", "postedOn", "posted", "publishTime",
+      "publishedDate", "postedDate", "datePosted", "date_posted", "createdDateTime", "postedTime", "posted_on", "absoluteDate", "time", "renewedOn", "createTime")),
     type, hmin, hmax, budget: type === "fixed" ? budget : null, skills, locs,
     client: {
       country: first(r, "client.country", "clientCountry", "client_country", "client.location.country", "buyer.location.country", "country"),
@@ -391,7 +394,7 @@ function gateAvailability(j, at) {
 }
 function gateFreshness(j, at) {
   const h = ageH(j, at);
-  if (h == null) throw new Excl("freshness", "posted time unknown");
+  if (h == null) { if (j.source === "live") return; throw new Excl("freshness", "posted time unknown"); }
   if (h <= 72) return;
   if (h > 24 * 14) throw new Excl("freshness", `posted ${Math.round(h / 24)} days ago`);
   const strong = j.act.proposals != null && j.act.proposals < 5 && (j.act.needed || 1) > 1;
@@ -532,49 +535,95 @@ function pickKey(props, patterns, fallback) {
   return fallback;
 }
 function findDeep(obj, re, depth = 0) {
-  if (!obj || typeof obj !== "object" || depth > 4) return undefined;
+  if (!obj || typeof obj !== "object" || depth > 5) return undefined;
   for (const [k, v] of Object.entries(obj)) if (re.test(k) && (typeof v === "string" || typeof v === "number")) return v;
   for (const v of Object.values(obj)) { const r = findDeep(v, re, depth + 1); if (r !== undefined) return r; }
   return undefined;
 }
-function itemsOf(payload) {
-  if (Array.isArray(payload)) return payload;
-  for (const k of ["items", "data", "results", "datasetItems"]) { const v = payload?.[k]; if (Array.isArray(v)) return v; if (Array.isArray(v?.items)) return v.items; }
+/* An object that looks like a run: has both an id and a status. */
+function findRun(obj, depth = 0) {
+  if (!obj || typeof obj !== "object" || depth > 5) return null;
+  if (!Array.isArray(obj) && obj.status && (obj.id || obj.runId)) return obj;
+  for (const v of Object.values(obj)) { const r = findRun(v, depth + 1); if (r) return r; }
+  return null;
+}
+/* Apify's MCP tools often answer in text (markdown with JSON inside), not structured JSON. */
+function parseLoose(t) {
+  if (typeof t !== "string") return t;
+  try { return JSON.parse(t); } catch {}
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) { try { return JSON.parse(fence[1]); } catch {} }
+  for (const [o, c] of [["[", "]"], ["{", "}"]]) { const a = t.indexOf(o), b = t.lastIndexOf(c); if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch {} } }
+  return null;
+}
+function textOf(res) { return (res?.content || []).filter(b => b.type === "text").map(b => b.text).join("\n"); }
+function payloadOf(res) {
+  if (res?.structuredContent && typeof res.structuredContent === "object") return res.structuredContent;
+  const p = res?.payload;
+  if (p && typeof p === "object") return p;
+  return parseLoose(typeof p === "string" ? p : textOf(res)) ?? {};
+}
+function fromText(res, kind) {
+  const t = textOf(res) || (typeof res?.payload === "string" ? res.payload : "");
+  const re = { dataset: /(?:default)?\s*dataset[\s_-]*id["'`*:\s=]+([A-Za-z0-9]{10,})/i, run: /run[\s_-]*id["'`*:\s=]+([A-Za-z0-9]{10,})/i,
+    status: /\b(SUCCEEDED|RUNNING|READY|FAILED|ABORTED|TIMED-OUT|TIMING-OUT)\b/ }[kind];
+  const m = t.match(re); return m ? m[1] : undefined;
+}
+function itemsOf(payload, depth = 0) {
+  if (typeof payload === "string") payload = parseLoose(payload);
+  if (Array.isArray(payload)) return payload.filter(x => x && typeof x === "object");
+  if (!payload || typeof payload !== "object" || depth > 3) return [];
+  for (const k of ["items", "data", "results", "datasetItems", "records"]) { const v = itemsOf(payload[k], depth + 1); if (v.length) return v; }
   return [];
 }
 const sleep = (ms, signal) => new Promise((res, rej) => { const t = setTimeout(res, ms); signal?.addEventListener("abort", () => { clearTimeout(t); rej({ code: "cancelled" }); }, { once: true }); });
+const snip = (v, n = 1500) => { const s = typeof v === "string" ? v : JSON.stringify(v); return s && s.length > n ? s.slice(0, n) + "…" : s; };
+let DIAG = null;
 
 async function runQuery(q, actor, tpl, limit, signal) {
+  const d = { query: q, steps: [] }; DIAG.queries.push(d);
   const callProps = await schemaProps("call-actor");
+  d.schemas = { "call-actor": callProps ? Object.keys(callProps) : "unavailable" };
   const input = JSON.parse(tpl.replaceAll("{query}", q.replace(/"/g, '\\"')).replace(/"\{limit\}"/g, String(limit)));
   const args = {};
   args[pickKey(callProps, [/^actor$/i, /actor(id|name)?$/i], "actor")] = actor;
   args[pickKey(callProps, [/^input$/i, /input/i], "input")] = input;
   if (callProps && "waitSecs" in callProps) args.waitSecs = 45;
   if (callProps && "callOptions" in callProps) args.callOptions = { maxItems: limit };
+  d.args = args;
   const res = await mcp.callTool(APIFY, "call-actor", args, { cache: false, signal });
-  const pay = res.payload ?? {};
-  let status = String(findDeep(pay, /^status$/i) || "");
-  const runId = findDeep(pay, /^(runId|run_id|actorRunId)$/i) ?? findDeep(pay, /^id$/i);
-  let datasetId = findDeep(pay, /^(datasetId|defaultDatasetId|dataset_id)$/i);
-  let inline = itemsOf(pay);
-  if (inline.length && /SUCCEEDED/i.test(status)) return inline;
+  const pay = payloadOf(res);
+  d.steps.push({ tool: "call-actor", reply: snip(textOf(res) || res.payload) });
+  const run = findRun(pay);
+  let status = String(run?.status || findDeep(pay, /^status$/i) || fromText(res, "status") || "");
+  const runId = findDeep(pay, /^(runId|run_id|actorRunId)$/i) ?? run?.id ?? fromText(res, "run");
+  let datasetId = findDeep(pay, /^(datasetId|defaultDatasetId|dataset_id)$/i) ?? fromText(res, "dataset");
+  const inline = itemsOf(pay);
+  Object.assign(d, { status, runId, datasetId, inlineItems: inline.length });
+  if (inline.length && (!datasetId || /SUCCEEDED/i.test(status))) return inline;
   for (let i = 0; i < 24 && !/SUCCEEDED|FAILED|ABORTED|TIMED-OUT/i.test(status) && runId; i++) {
     await sleep(5000, signal);
     const rp = await schemaProps("get-actor-run");
     const ra = {}; ra[pickKey(rp, [/^runId$/i, /run/i, /^id$/i], "runId")] = runId;
-    const r = (await mcp.callTool(APIFY, "get-actor-run", ra, { cache: false, signal })).payload ?? {};
-    status = String(findDeep(r, /^status$/i) || status);
-    datasetId = datasetId || findDeep(r, /^(datasetId|defaultDatasetId)$/i);
+    const rr = await mcp.callTool(APIFY, "get-actor-run", ra, { cache: false, signal });
+    const r = payloadOf(rr);
+    status = String(findRun(r)?.status || findDeep(r, /^status$/i) || fromText(rr, "status") || status);
+    datasetId = datasetId || findDeep(r, /^(datasetId|defaultDatasetId)$/i) || fromText(rr, "dataset");
+    if (i === 0) d.steps.push({ tool: "get-actor-run", reply: snip(textOf(rr) || rr.payload, 800) });
     log(`  …run ${String(runId).slice(0, 8)} ${status || "running"}`);
   }
-  if (/FAILED|ABORTED|TIMED-OUT/i.test(status)) throw { code: "tool_error", message: `Apify run ${status.toLowerCase()} for "${q}". Check the actor and its input template.` };
-  if (!datasetId) { if (inline.length) return inline; throw { code: "tool_error", message: "Apify didn't return a dataset for this run." }; }
+  d.status = status; d.datasetId = datasetId;
+  if (/FAILED|ABORTED|TIMED-OUT/i.test(status)) throw { code: "tool_error", message: `Apify run ${status.toLowerCase()}. Check the actor ID and its input template.` };
+  if (!datasetId) throw { code: "tool_error", message: "Apify's reply had no dataset ID. Copy the run details and send them to Claude." };
   const dp = await schemaProps("get-dataset-items");
+  d.schemas["get-dataset-items"] = dp ? Object.keys(dp) : "unavailable";
   const da = {}; da[pickKey(dp, [/^datasetId$/i, /dataset/i], "datasetId")] = datasetId;
   if (!dp || "limit" in dp) da.limit = limit;
-  const d = await mcp.callTool(APIFY, "get-dataset-items", da, { cache: false, signal });
-  return itemsOf(d.payload ?? []);
+  const dr = await mcp.callTool(APIFY, "get-dataset-items", da, { cache: false, signal });
+  const items = itemsOf(payloadOf(dr));
+  d.steps.push({ tool: "get-dataset-items", items: items.length, reply: items.length ? undefined : snip(textOf(dr) || dr.payload) });
+  if (items.length) { d.itemKeys = Object.keys(items[0]); d.firstItem = snip(items[0], 2500); }
+  return items;
 }
 
 /* ---------------- pipeline ---------------- */
@@ -608,6 +657,7 @@ $("btnRun").onclick = async () => {
   runCtl = new AbortController(); const signal = runCtl.signal;
   $("btnRun").disabled = true; $("btnStop").hidden = false; $("log").textContent = ""; $("runNote").textContent = "Running…";
   const at = Date.now(); const excluded = []; let raw = [];
+  DIAG = { at: new Date(at).toISOString(), actor, template: $("inputTpl").value, queries: [], gates: {} };
   try {
     if (file) {
       log(`Reading ${file.name}…`);
@@ -625,6 +675,7 @@ $("btnRun").onclick = async () => {
           if (e?.code === "cancelled") throw e;
           if (["server_not_connected", "needs_reauth", "not_in_manifest", "blocked_by_policy", "selection_required"].includes(e?.code)) { apifyError(e, "msg3"); throw { code: "stop" }; }
           log(`  failed: ${e?.message || e?.code}`);
+          DIAG.queries[DIAG.queries.length - 1].error = (e?.code || "") + " " + (e?.message || "");
         }
       }
     }
@@ -641,6 +692,9 @@ $("btnRun").onclick = async () => {
       } catch (e) { if (e instanceof Excl) excluded.push({ job: j, gate: e.gate, reason: e.reason }); else throw e; }
     }
     log(`${pass.length} passed the hard gates.`);
+    DIAG.found = jobs.length; DIAG.rawItems = raw.length; DIAG.passed = pass.length;
+    for (const e of excluded) DIAG.gates[e.gate + ": " + e.reason.replace(/\d+/g, "N")] = (DIAG.gates[e.gate + ": " + e.reason.replace(/\d+/g, "N")] || 0) + 1;
+    if (jobs[0]) DIAG.firstJobAsRead = { title: jobs[0].title, url: jobs[0].url, postedAt: jobs[0].postedAt && new Date(jobs[0].postedAt).toISOString(), pay: compensation(jobs[0]), proposals: jobs[0].act.proposals, client: jobs[0].client };
     let judged = {};
     if (pass.length) judged = await judgeAll(p, pass, signal);
     const scored = [];
@@ -659,7 +713,7 @@ $("btnRun").onclick = async () => {
   } catch (e) {
     if (e?.code === "cancelled") log("Stopped.");
     else if (e?.code !== "stop") msg("msg3", e?.code && sampleErrCopy(e) !== e.message ? sampleErrCopy(e) : (e?.message || "The run failed."), "err");
-  } finally { $("btnRun").disabled = false; $("btnStop").hidden = true; $("runNote").textContent = ""; }
+  } finally { $("btnRun").disabled = false; $("btnStop").hidden = true; $("runNote").textContent = ""; $("diagRow").hidden = !DIAG; }
 };
 
 /* ---------------- render ---------------- */
@@ -708,6 +762,12 @@ $("btnCsv").onclick = () => {
   const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const rows = [...lastResult.shortlist, ...lastResult.unverified].map(s => [s.verdict, s.total, s.job.title, s.job.url, s.job.postedAt ? new Date(s.job.postedAt).toISOString() : "", compensation(s.job), s.job.client.country, s.clientNote, s.compNote, s.jd.capability_fit, s.jd.evidence_fit, s.jd.why_selected, (s.jd.risks || []).join("; "), s.jd.proposal_opener].map(q).join(","));
   save("findjobs-shortlist.csv", [cols.join(","), ...rows].join("\n"));
+};
+$("btnDiag").onclick = async () => {
+  const t = JSON.stringify(DIAG, null, 1);
+  try { await navigator.clipboard.writeText(t); $("btnDiag").textContent = "Copied"; }
+  catch { $("log").textContent = t; const r = document.createRange(); r.selectNodeContents($("log")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); $("btnDiag").textContent = "Selected in the log box, press Ctrl+C"; }
+  setTimeout(() => $("btnDiag").textContent = "Copy run details", 2500);
 };
 const last = store.get("last", null); if (last) { lastResult = last; render(last); }
 </script>
