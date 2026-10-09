@@ -296,7 +296,7 @@ pre.log{font:12px/1.5 var(--mono);background:var(--wash);border-radius:10px;padd
     <div class="field"><label for="maxResults">Max matches to show</label><input id="maxResults" type="number" min="1" max="30" value="10"></div>
     <div class="field"><label for="inputTpl">Scraper input template</label><textarea id="inputTpl" spellcheck="false"></textarea><div class="note">Must match your scraper's input. <code>{query}</code> and <code>{limit}</code> get filled in.</div></div>
     <div class="row"><button class="btn primary" id="btnCheck">Check Apify connection</button><button class="btn" id="btnPerms" hidden>Open permissions</button></div>
-    <details class="adv"><summary>Last run details</summary><div class="row" style="margin:10px 0"><button class="btn" id="btnDiag">Copy run details</button><span class="note">Paste into the chat if a hunt finds nothing.</span></div><pre class="log" id="log">No run yet.</pre></details>
+    <details class="adv"><summary>Last run details</summary><div class="row" style="margin:10px 0"><button class="btn" id="btnDiag">Copy run details</button><span class="note">Each hunt's details are also saved with this page, so Claude can read them if you ask in chat.</span></div><pre class="log" id="log">No run yet.</pre></details>
   </div>
 </dialog>
 <div class="toast" id="toast" hidden role="status"></div>
@@ -315,7 +315,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("fj." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem("fj." + k, JSON.stringify(v)); } catch {} },
 };
-let sample = null, mcp = null, downloads = null, permissions = null;
+let sample = null, mcp = null, downloads = null, permissions = null, db = null, apifyCheck = null;
 let profile = null, lastResult = null, runCtl = null, filter = "all";
 let saved = new Set(store.get("saved", []));
 
@@ -342,7 +342,7 @@ document.addEventListener("click", e => { const b = e.target.closest("[data-go]"
 /* ---------- capabilities ---------- */
 function dot(id, text, kind) { const el = $(id); el.textContent = text; el.className = "dot " + (kind || ""); }
 (async () => {
-  [sample, mcp, downloads, permissions] = await Promise.all(["sample", "mcp", "downloads", "permissions"].map(n => window.claude?.use?.(n) ?? Promise.resolve(null)));
+  [sample, mcp, downloads, permissions, db] = await Promise.all(["sample", "mcp", "downloads", "permissions", "db"].map(n => window.claude?.use?.(n) ?? Promise.resolve(null)));
   dot("dotClaude", sample ? "Claude" : "Claude off", sample ? "ok" : "bad");
   checkApify(false);
 })();
@@ -356,6 +356,7 @@ async function checkApify(userAsked) {
     try {
       const { servers } = await mcp.listTools(APIFY);
       const s = servers.find(x => x.server === APIFY);
+      apifyCheck = { at: new Date().toISOString(), servers: servers.map(x => ({ server: x.server, authStatus: x.authStatus, tools: (x.tools || []).map(t => t.name) })) };
       if (!s) { state = "missing"; }
       else if (s.authStatus === "needs_reauth") { state = "warn"; text = "Apify's sign-in expired. Reconnect it in claude.ai Settings → Connectors."; }
       else {
@@ -365,7 +366,7 @@ async function checkApify(userAsked) {
           if (st["mcp:" + APIFY] === "denied") { state = "warn"; text = "You turned Apify off for this page. Use Open permissions to switch it back on."; $("btnPerms").hidden = false; }
         }
       }
-    } catch (e) { state = "warn"; text = apifyCopy(e); }
+    } catch (e) { state = "warn"; text = apifyCopy(e); apifyCheck = { at: new Date().toISOString(), error: e?.code + " " + (e?.message || "") }; }
   }
   dot("dotApify", state === "ok" ? "Apify" : state === "missing" ? "Apify: set up" : "Apify: check", state === "ok" ? "ok" : state === "bad" ? "bad" : "warn");
   apifyOk = state === "ok";
@@ -522,21 +523,34 @@ function now(t) { $("nowText").textContent = t; }
 
 /*LOGIC*/
 
+/* ---------- run record: saved to this artifact's storage so Claude can read it when a hunt fails ---------- */
+async function saveRun(extra) {
+  if (!db) return;
+  try {
+    const doc = { ...(DIAG || {}), ...extra, savedAt: new Date().toISOString(), env: { claude: !!sample, connectors: !!mcp, apifyOk, apifyCheck, actor: $("actor").value.trim(), template: $("inputTpl").value, perQuery: +$("perQuery").value, queriesOn: queries().filter(x => x.on).map(x => x.q), profile: profile?.name || null, file: $("jobsFile").files[0]?.name || null } };
+    let json = JSON.stringify(doc);
+    if (json.length > 200000) json = JSON.stringify({ ...doc, queries: (doc.queries || []).map(q => ({ ...q, steps: (q.steps || []).map(x => ({ tool: x.tool, items: x.items })), firstItem: String(q.firstItem || "").slice(0, 1500) })) });
+    await db.doc("runs/latest").set(JSON.parse(json));
+  } catch {}
+}
+function bail(text, how) { if (how === "drawer") { openDrawer(); toast(text); } else alertBox("runErr", text); saveRun({ outcome: "blocked", reason: text }); }
+
 /* ---------- the hunt ---------- */
 $("btnStop").onclick = () => runCtl?.abort();
 $("btnRun").onclick = async () => {
   saveSettings(); alertBox("runErr", "");
   const p = profile;
-  if (!p) { go("you"); toast("Add your profile first"); return; }
-  if (!sample) { alertBox("runErr", "Claude can't run in this view, so jobs can't be checked. Open the page in claude.ai."); return; }
+  DIAG = null;
+  if (!p) { go("you"); bail("Add your profile first"); return; }
+  if (!sample) { bail("Claude can't run in this view, so jobs can't be checked. Open the page in claude.ai."); return; }
   const file = $("jobsFile").files[0];
   const qs = queries().filter(x => x.on).map(x => x.q);
   const actor = $("actor").value.trim();
   if (!file) {
-    if (!mcp || !apifyOk) { alertBox("runErr", "Connect Apify first (see the box above)."); return; }
-    if (!actor) { openDrawer(); toast("Paste your Apify scraper ID"); return; }
-    if (!qs.length) { alertBox("runErr", "Switch on at least one search."); return; }
-    try { JSON.parse($("inputTpl").value.replaceAll("{query}", "x").replace(/"\{limit\}"/g, "1")); } catch { openDrawer(); toast("The scraper input template isn't valid JSON"); return; }
+    if (!mcp || !apifyOk) { await checkApify(false); if (!apifyOk) { bail("Apify isn't connected yet, so nothing was searched. Follow the steps in the box above, then press Check again."); return; } }
+    if (!actor) { bail("Paste your Apify scraper ID in Settings first. Nothing was searched.", "drawer"); return; }
+    if (!qs.length) { bail("Switch on at least one search."); return; }
+    try { JSON.parse($("inputTpl").value.replaceAll("{query}", "x").replace(/"\{limit\}"/g, "1")); } catch { bail("The scraper input template in Settings isn't valid JSON.", "drawer"); return; }
   }
   runCtl = new AbortController(); const signal = runCtl.signal;
   $("btnRun").disabled = true; $("btnStop").hidden = false; $("log").textContent = ""; $("feed").innerHTML = ""; $("blips").innerHTML = "";
@@ -591,10 +605,11 @@ $("btnRun").onclick = async () => {
     store.set("last", lastResult);
     now(lastResult.shortlist.length ? `Found ${lastResult.shortlist.length} match${lastResult.shortlist.length > 1 ? "es" : ""}` : "No matches this round");
     log("Done.");
+    saveRun({ outcome: "done", matches: lastResult.shortlist.length, skippedByGate: Object.fromEntries(Object.entries(excluded.reduce((m, e) => (m[e.gate] = (m[e.gate] || 0) + 1, m), {}))) });
     renderMatches(); setTimeout(() => go("matches"), 900);
   } catch (e) {
-    if (e?.code === "cancelled") { now("Stopped"); log("Stopped."); }
-    else if (e?.code !== "stop") { alertBox("runErr", e?.code ? sampleErrCopy(e) : (e?.message || "The hunt failed.")); now("Something went wrong"); }
+    if (e?.code === "cancelled") { now("Stopped"); log("Stopped."); saveRun({ outcome: "stopped" }); }
+    else { if (e?.code !== "stop") { alertBox("runErr", e?.code ? sampleErrCopy(e) : (e?.message || "The hunt failed.")); now("Something went wrong"); } saveRun({ outcome: "error", error: (e?.code || "") + " " + (e?.message || ""), shown: $("runErr").textContent }); }
   } finally { $("btnRun").disabled = false; $("btnStop").hidden = true; $("radarBox").classList.remove("live"); }
 };
 
