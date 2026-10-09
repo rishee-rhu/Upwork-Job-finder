@@ -81,7 +81,7 @@ def execute_run(a: argparse.Namespace, log=_log) -> pipeline.RunResult:
         tpl = json.loads(Path(a.apify_input).read_text()) if a.apify_input else None
         queries = a.query or profile.search_queries or DEFAULT_QUERIES
         log(f"Searching Apify with {len(queries)} queries...")
-        jobs += apify.search(queries, template=tpl)
+        jobs += apify.search(queries, template=tpl, log=log)
         log(f"Apify returned {len(jobs)} jobs.")
     if not jobs:
         raise ValueError("No jobs to screen. Pass --jobs FILE and/or --apify.")

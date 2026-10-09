@@ -11,7 +11,7 @@ import json
 import os
 import urllib.parse
 import urllib.request
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from ..models import Job, now_utc
 from ..verify import PageState
@@ -36,7 +36,8 @@ def _fill(tpl: Any, q: str) -> Any:
 
 
 def search(queries: list[str], actor: Optional[str] = None, token: Optional[str] = None,
-           template: Optional[dict] = None, timeout: int = 300, max_items: int = 30) -> list[Job]:
+           template: Optional[dict] = None, timeout: int = 300, max_items: int = 30,
+           log: Optional[Callable[[str], None]] = None) -> list[Job]:
     actor = (actor or os.environ.get("APIFY_ACTOR") or DEFAULT_ACTOR).replace("/", "~")
     token = token or os.environ.get("APIFY_TOKEN")
     if not token:
@@ -51,8 +52,15 @@ def search(queries: list[str], actor: Optional[str] = None, token: Optional[str]
         body = json.dumps(_fill(template, q)).encode()
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json",
                                                               "Authorization": f"Bearer {token}"})
-        with urllib.request.urlopen(req, timeout=timeout + 30) as r:
-            items = json.loads(r.read())
+        try:
+            with urllib.request.urlopen(req, timeout=timeout + 30) as r:
+                items = json.loads(r.read())
+        except Exception as e:  # one slow or failed search shouldn't lose the others
+            if log:
+                log(f"  search {q!r} failed: {type(e).__name__}: {e}"[:200])
+            continue
+        if log:
+            log(f"  {len(items)} jobs for {q!r}")
         seen_at = now_utc()
         for it in items:
             j = normalize(it, f"apify:{actor}")
