@@ -35,6 +35,7 @@ function normalize(r, source, observedAt) {
   if (!url) { const cipher = first(r, "ciphertext", "cipherText", "jobCiphertext", "uid"); if (cipher && /^~/.test(cipher)) url = "https://www.upwork.com/jobs/" + cipher; }
   if (!url) return null;
   if (url.startsWith("/")) url = "https://www.upwork.com" + url;
+  if (jobId(url)) url = "https://www.upwork.com/jobs/~0" + jobId(url);
   let hmin = num(first(r, "hourlyMin", "hourly_min", "hourlyBudgetMin", "hourly.min", "budget.hourlyMin", "hourlyBudget.min"));
   let hmax = num(first(r, "hourlyMax", "hourly_max", "hourlyBudgetMax", "hourly.max", "budget.hourlyMax", "hourlyBudget.max"));
   const hourly = first(r, "hourlyRate", "hourly_rate", "hourlyRange");

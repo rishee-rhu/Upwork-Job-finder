@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from ..models import Activity, Client, Job, parse_dt
+from ..models import Activity, Client, Job, canonical_url, job_id_from_url, parse_dt
 
 
 def _first(d: dict, *keys: str) -> Any:
@@ -58,6 +58,8 @@ def normalize(raw: dict, source: str) -> Optional[Job]:
         return None
     if url.startswith("/"):
         url = "https://www.upwork.com" + url
+    if job_id_from_url(url):  # drop slug/search-highlight junk and tracking params
+        url = canonical_url(url)
     hourly = _first(raw, "hourlyRate", "hourly_rate", "hourlyBudget", "budget.hourly")
     for k in ("job", "jobDetails", "node"):
         if isinstance(raw.get(k), dict):
