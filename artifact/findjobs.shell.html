@@ -244,7 +244,7 @@ pre.log{font:12px/1.5 var(--mono);background:var(--wash);border-radius:10px;padd
 <!-- ============ 2. HUNT ============ -->
 <section class="view" id="v-hunt" hidden>
   <div class="hero"><h1>Pick what to <em>hunt for</em>.</h1>
-    <p>Each search scans live Upwork jobs through Apify. Only jobs that are open right now make it through, and Claude checks every one against what you can prove.</p></div>
+    <p>Each search scans Upwork jobs <b>posted today</b> through Apify. Only jobs open right now make it through, and Claude checks every one against what you can prove.</p></div>
   <div id="setupBox"></div>
   <div class="hunt">
     <div class="card">
@@ -293,6 +293,7 @@ pre.log{font:12px/1.5 var(--mono);background:var(--wash);border-radius:10px;padd
     <div id="drApify"></div>
     <div class="field"><label for="actor">Apify scraper (actor ID)</label><input id="actor" placeholder="neatrat/upwork-job-scraper" autocomplete="off"><div class="note">Default: neatrat/upwork-job-scraper (tested, about $0.0035 per job).</div></div>
     <div class="field"><label for="perQuery">Jobs per search</label><input id="perQuery" type="number" min="5" max="100" value="25"></div>
+    <div class="field"><label for="maxAge">Only jobs posted in the last (hours)</label><input id="maxAge" type="number" min="1" max="168" value="24"><div class="note">24 = posted today. Older jobs are skipped.</div></div>
     <div class="field"><label for="maxResults">Max matches to show</label><input id="maxResults" type="number" min="1" max="30" value="10"></div>
     <div class="field"><label for="inputTpl">Scraper input template</label><textarea id="inputTpl" spellcheck="false"></textarea><div class="note">Must match your scraper's input. <code>{qurl}</code> (exact-phrase search), <code>{query}</code> and <code>{limit}</code> get filled in.</div></div>
     <div class="row"><button class="btn primary" id="btnCheck">Check Apify connection</button><button class="btn" id="btnPerms" hidden>Open permissions</button></div>
@@ -309,7 +310,7 @@ pre.log{font:12px/1.5 var(--mono);background:var(--wash);border-radius:10px;padd
 const EXAMPLES = /*EXAMPLES*/{};
 const APIFY = "Apify";
 const DEFAULT_ACTOR = "neatrat/upwork-job-scraper";
-const DEFAULT_TPL = JSON.stringify({ rawUrl: "https://www.upwork.com/nx/search/jobs/?q={qurl}&sort=recency&per_page=50", maxJobAge: { value: 72, unit: "hours" } }, null, 1);
+const DEFAULT_TPL = JSON.stringify({ rawUrl: "https://www.upwork.com/nx/search/jobs/?q={qurl}&sort=recency&per_page=50", maxJobAge: { value: 24, unit: "hours" } }, null, 1);
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const store = {
@@ -318,6 +319,7 @@ const store = {
 };
 // Settings saved before these defaults existed pointed at nothing that worked; move them over once.
 if (!store.get("v5", false)) { if (!store.get("actor", "")) store.set("actor", DEFAULT_ACTOR); const t = store.get("inputTpl", ""); if (!t || /"query": "\{query\}",\s*"maxItems"/.test(t)) store.set("inputTpl", DEFAULT_TPL); store.set("v5", true); }
+if (!store.get("v6", false)) { const t = store.get("inputTpl", ""); if (t.includes('"value": 72')) store.set("inputTpl", t.replace('"value": 72', '"value": 24')); store.set("v6", true); }
 let sample = null, mcp = null, downloads = null, permissions = null, db = null, apifyCheck = null;
 let profile = null, lastResult = null, runCtl = null, filter = "all";
 let saved = new Set(store.get("saved", []));
@@ -404,9 +406,9 @@ function openDrawer() { $("drawer").showModal(); }
 $("btnGear").onclick = openDrawer; $("drClose").onclick = () => $("drawer").close();
 $("drawer").addEventListener("click", e => { if (e.target === $("drawer")) $("drawer").close(); });
 $("actor").value = store.get("actor", ""); $("perQuery").value = store.get("perQuery", 25);
-$("inputTpl").value = store.get("inputTpl", DEFAULT_TPL); $("maxResults").value = store.get("maxResults", 10);
-function saveSettings() { store.set("actor", $("actor").value.trim()); store.set("perQuery", +$("perQuery").value || 25); store.set("inputTpl", $("inputTpl").value); store.set("maxResults", +$("maxResults").value || 10); }
-["actor", "perQuery", "inputTpl", "maxResults"].forEach(id => $(id).addEventListener("change", saveSettings));
+$("inputTpl").value = store.get("inputTpl", DEFAULT_TPL); $("maxResults").value = store.get("maxResults", 10); $("maxAge").value = store.get("maxAge", 24);
+function saveSettings() { store.set("actor", $("actor").value.trim()); store.set("perQuery", +$("perQuery").value || 25); store.set("inputTpl", $("inputTpl").value); store.set("maxResults", +$("maxResults").value || 10); store.set("maxAge", +$("maxAge").value || 24); }
+["actor", "perQuery", "inputTpl", "maxResults", "maxAge"].forEach(id => $(id).addEventListener("change", saveSettings));
 $("btnCheck").onclick = () => { saveSettings(); checkApify(true); };
 
 /* ---------- profile ---------- */
@@ -585,7 +587,7 @@ $("btnRun").onclick = async () => {
     for (const j of jobs) {
       try {
         try { gateAvailability(j, at); j.verified = true; } catch (e) { if (!showUnv || j.closedFlag) throw e; j.verified = false; j.why = e.reason; }
-        gateFreshness(j, at); gateLocation(j, p); gateCompetition(j); j.cc = commissionPre(j, p); pass.push(j); blip(j.id);
+        gateFreshness(j, at, +$("maxAge").value || 24); gateLocation(j, p); gateCompetition(j); j.cc = commissionPre(j, p); pass.push(j); blip(j.id);
       } catch (e) { if (e instanceof Excl) { excluded.push({ job: j, gate: e.gate, reason: e.reason }); blip(j.id, "cut"); } else throw e; }
     }
     tally(jobs.length, pass.length, 0, 0);
@@ -618,7 +620,7 @@ $("btnRun").onclick = async () => {
 
 /* ---------- matches ---------- */
 const VERDICT = { "APPLY NOW": ["Apply now", "b-now"], APPLY: ["Strong fit", "b-apply"], REVIEW: ["Worth a look", "b-review"] };
-const GATE_COPY = { availability: "not open anymore", freshness: "too old", eligibility: "you don't meet a must-have", competition: "too crowded", commission: "unclear pay", capability: "not your kind of work", evidence: "can't back it up yet", proposal: "no honest pitch possible", rank: "weak overall fit", judgment: "Claude skipped it" };
+const GATE_COPY = { availability: "not open anymore", freshness: "not posted today", eligibility: "you don't meet a must-have", competition: "too crowded", commission: "unclear pay", capability: "not your kind of work", evidence: "can't back it up yet", proposal: "no honest pitch possible", rank: "weak overall fit", judgment: "Claude skipped it" };
 function ago(t, at) { if (!t) return "post time unknown"; const h = (at - t) / 3600e3; return h < 1 ? `${Math.max(1, Math.round(h * 60))} min ago` : h < 48 ? `${Math.round(h)}h ago` : `${Math.round(h / 24)} days ago`; }
 function ringSvg(v) {
   const c = 2 * Math.PI * 27, color = v >= 75 ? "var(--go)" : v >= 62 ? "var(--cobalt)" : "var(--hold)";

@@ -89,12 +89,18 @@ def test_old_jobs_excluded_and_never_opened(profile, now, mk):
     assert v.calls == 0 and set(gates_for(res).values()) == {"freshness"}
 
 
-def test_four_day_old_job_kept_only_with_strong_activity(profile, now, mk):
-    weak = mk(1, hours_old=96, activity=Activity(proposals=20, interviewing=2))
-    strong = mk(2, hours_old=96, activity=Activity(proposals=2, interviewing=0, last_viewed_hours=3))
-    res = run(profile, [weak, strong], now)
-    assert gates_for(res).get(weak.key) == "freshness"
-    assert strong.key in [s.job.key for s in res.shortlist]
+def test_only_jobs_posted_today(profile, now, mk):
+    today = mk(1, hours_old=23)
+    yesterday = mk(2, hours_old=30, activity=Activity(proposals=0, interviewing=0))  # great stats don't rescue it
+    undated = mk(3)
+    undated.posted_at = None
+    res = run(profile, [today, yesterday, undated], now)
+    g = gates_for(res)
+    assert g[yesterday.key] == "freshness" and g[undated.key] == "freshness"
+    assert [s.job.key for s in res.shortlist] == [today.key]
+    # the window is configurable
+    res2 = run(profile, [mk(4, hours_old=30)], now, max_age_hours=72)
+    assert len(res2.shortlist) == 1
 
 
 def test_missing_mandatory_case_studies_excluded(profile, now, mk):

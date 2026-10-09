@@ -105,7 +105,7 @@ def execute_run(a: argparse.Namespace, log=_log) -> pipeline.RunResult:
 
     try:
         res = pipeline.run(profile, jobs, verifier=verifier, judge=judge, max_results=a.max,
-                           show_unverified=a.show_unverified, log=log)
+                           show_unverified=a.show_unverified, max_age_hours=a.max_age_hours, log=log)
     finally:
         if verifier:
             verifier.close()
@@ -170,6 +170,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--judgments", help="judgments.json written without the API (see judge_requests.json)")
     p.add_argument("--api", action="store_true", help="force Claude API judge")
     p.add_argument("--max", type=int, default=10)
+    p.add_argument("--max-age-hours", type=float, default=24, help="only jobs posted within this many hours (default 24)")
     p.add_argument("--audit", action="store_true", help="include every excluded job and why")
     p.add_argument("--out-dir", default="out")
     p.set_defaults(fn=cmd_run)

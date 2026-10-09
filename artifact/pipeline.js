@@ -96,13 +96,10 @@ function gateAvailability(j, at) {
   if (j.scrapedAt && at - j.scrapedAt <= 60 * 60e3) return;
   throw new Excl("availability", j.scrapedAt ? `scraped ${Math.round((at - j.scrapedAt) / 60e3)} min ago, too old to trust` : "file has no scrape time; can't confirm it's open");
 }
-function gateFreshness(j, at) {
+function gateFreshness(j, at, maxH = 24) {
   const h = ageH(j, at);
-  if (h == null) { if (j.source === "live") return; throw new Excl("freshness", "posted time unknown"); }
-  if (h <= 72) return;
-  if (h > 24 * 14) throw new Excl("freshness", `posted ${Math.round(h / 24)} days ago`);
-  const strong = j.act.proposals != null && j.act.proposals < 5 && (j.act.needed || 1) > 1;
-  if (!strong) throw new Excl("freshness", `posted ${(h / 24).toFixed(1)} days ago`);
+  if (h == null) throw new Excl("freshness", "post time unknown, can't confirm it's from today");
+  if (h > maxH) throw new Excl("freshness", `posted ${h < 48 ? Math.round(h) + " hours" : Math.round(h / 24) + " days"} ago`);
 }
 function gateLocation(j, p) {
   if (!j.locs.length) return;

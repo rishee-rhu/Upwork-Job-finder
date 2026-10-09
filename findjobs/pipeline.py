@@ -69,12 +69,13 @@ def _verify(jobs: list[Job], verifier: Any, at: datetime, reuse_minutes: float,
         log(f"  verify {i}/{len(jobs)} {v.state:<11} {j.title[:60]}")
 
 
-def _deterministic_gates(job: Job, profile: Profile, at: datetime, strict_availability: bool) -> Optional[str]:
+def _deterministic_gates(job: Job, profile: Profile, at: datetime, strict_availability: bool,
+                         max_age_hours: float = gates.DEFAULT_MAX_AGE_HOURS) -> Optional[str]:
     if strict_availability:
         gates.gate_availability(job)
     elif job.availability not in (None, PageState.OK, PageState.BLOCKED, PageState.ERROR):
         gates.gate_availability(job)  # known-dead jobs are always out
-    gates.gate_freshness(job, at)
+    gates.gate_freshness(job, at, max_age_hours)
     gates.gate_location(job, profile)
     gates.gate_budget_floor(job, profile)
     gates.gate_competition(job)
@@ -124,7 +125,8 @@ def _score(job: Job, j: dict, profile: Profile, at: datetime, commission_class: 
 
 def run(profile: Profile, jobs: list[Job], *, verifier: Any = None, judge: Any = None,
         at: Optional[datetime] = None, max_results: int = 10, show_unverified: bool = False,
-        reuse_verification_minutes: float = 60, log: Callable[[str], None] = lambda s: None) -> RunResult:
+        reuse_verification_minutes: float = 60, max_age_hours: float = gates.DEFAULT_MAX_AGE_HOURS,
+        log: Callable[[str], None] = lambda s: None) -> RunResult:
     at = at or now_utc()
     res = RunResult(profile=profile, started_at=at)
     if profile.has_upwork_profile:
@@ -137,7 +139,7 @@ def run(profile: Profile, jobs: list[Job], *, verifier: Any = None, judge: Any =
     for j in jobs:
         try:
             if j.posted_at:
-                gates.gate_freshness(j, at)
+                gates.gate_freshness(j, at, max_age_hours)
             pre.append(j)
         except Exclusion as e:
             res.excluded.append(Excluded(j, e.gate, e.reason))
@@ -148,7 +150,8 @@ def run(profile: Profile, jobs: list[Job], *, verifier: Any = None, judge: Any =
     survivors: list[tuple[Job, Optional[str]]] = []
     for j in pre:
         try:
-            survivors.append((j, _deterministic_gates(j, profile, at, strict_availability=not show_unverified)))
+            survivors.append((j, _deterministic_gates(j, profile, at, strict_availability=not show_unverified,
+                                                       max_age_hours=max_age_hours)))
         except Exclusion as e:
             res.excluded.append(Excluded(j, e.gate, e.reason))
     res.stats["passed_deterministic"] = len(survivors)

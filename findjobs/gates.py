@@ -48,19 +48,16 @@ def freshness_points(job: Job, at: Optional[datetime] = None) -> float:
     return 5 if h <= 6 else 4 if h <= 24 else 2 if h <= 72 else 1
 
 
-def gate_freshness(job: Job, at: Optional[datetime] = None, max_days: float = 3) -> None:
+DEFAULT_MAX_AGE_HOURS = 24  # students can only act on jobs posted today
+
+
+def gate_freshness(job: Job, at: Optional[datetime] = None, max_hours: float = DEFAULT_MAX_AGE_HOURS) -> None:
     h = job.age_hours(at)
     if h is None:
-        raise Exclusion("freshness", "posted time unknown")
-    if h <= 72:
-        return
-    if h > 24 * 14:
-        raise Exclusion("freshness", f"posted {h / 24:.0f} days ago")
-    a = job.activity
-    unusually_strong = (a.proposals is not None and a.proposals < 5 and
-                        ((a.last_viewed_hours is not None and a.last_viewed_hours <= 24) or (a.freelancers_needed or 1) > 1))
-    if h > 24 * max_days and not unusually_strong:
-        raise Exclusion("freshness", f"posted {h / 24:.1f} days ago, no strong-activity exception")
+        raise Exclusion("freshness", "posted time unknown, can't confirm it's from today")
+    if h > max_hours:
+        ago = f"{h:.0f} hours" if h < 48 else f"{h / 24:.0f} days"
+        raise Exclusion("freshness", f"posted {ago} ago (limit {max_hours:g}h)")
 
 
 # ---------- Gate 2 (deterministic part): hard eligibility ----------

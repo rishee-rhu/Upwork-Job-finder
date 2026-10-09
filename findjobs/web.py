@@ -137,7 +137,7 @@ def _run_args(st: State, body: dict) -> argparse.Namespace:
         chromium=s.get("chromium") or None, headed=bool(body.get("headed")), no_verify=bool(body.get("no_verify")),
         show_unverified=bool(body.get("show_unverified")),
         judgments=str(judgments) if body.get("use_judgments") and judgments.exists() else None,
-        api=False, max=int(body.get("max_results") or s.get("max_results") or 10), audit=bool(body.get("audit", True)),
+        api=False, max_age_hours=float(body.get("max_age_hours") or 24), max=int(body.get("max_results") or s.get("max_results") or 10), audit=bool(body.get("audit", True)),
         out_dir=str(st.out),
     )
 

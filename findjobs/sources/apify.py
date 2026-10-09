@@ -18,10 +18,10 @@ from ..verify import PageState
 from . import normalize
 
 DEFAULT_ACTOR = "neatrat/upwork-job-scraper"
-# Exact-phrase Upwork search, newest first, last 72h. {qurl} = URL-encoded quoted query.
+# Exact-phrase Upwork search, newest first, last 24h. {qurl} = URL-encoded quoted query.
 DEFAULT_TEMPLATE: dict[str, Any] = {
     "rawUrl": "https://www.upwork.com/nx/search/jobs/?q={qurl}&sort=recency&per_page=50",
-    "maxJobAge": {"value": 72, "unit": "hours"},
+    "maxJobAge": {"value": 24, "unit": "hours"},
 }
 
 

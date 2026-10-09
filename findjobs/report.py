@@ -52,9 +52,15 @@ def to_markdown(r: RunResult, audit: bool = False) -> str:
             row = _row(s, at)
             row[0] = f"[{_cell(row[0])}]({row[1]})"
             out.append("| " + " | ".join(_cell(c) for c in row) + " |")
-        out += ["", "### Proposal openers"]
-        for s in r.shortlist:
-            out += [f"**{s.job.title}** ({s.verdict}, {s.total:.0f})", f"> {s.judgment['proposal_opener']}", ""]
+        out += ["", "### Why each job is right for them"]
+        for i, s in enumerate(r.shortlist, 1):
+            jd = s.judgment
+            out += [f"#### {i}. [{s.job.title}]({s.job.url}): {s.verdict}, {s.total:.0f}/100",
+                    f"Posted {_ago(s.job.posted_at, at)} · {s.job.compensation()} · {s.competition_note} · client: {s.client_note}", "",
+                    jd["why_selected"], "",
+                    "**Proof from the dossier:** " + "; ".join(jd["dossier_evidence"]),
+                    "", "**Watch out:** " + ("; ".join(jd["risks"]) or "nothing major"),
+                    "", "**Opening lines:**", f"> {jd['proposal_opener']}", ""]
     else:
         out.append("No job passed every gate. That's the system working: nothing below the bar gets recommended.")
     if r.unverified:
@@ -89,8 +95,12 @@ def to_html(r: RunResult, audit: bool = False) -> str:
         cls = s.verdict.replace(" ", "-").lower()
         cells[-1] = f'<span class="v {cls}">{e(s.verdict)}</span>'
         rows.append("<tr>" + "".join(f"<td>{x}</td>" for x in cells) + "</tr>")
-    openers = "".join(f"<div class='op'><b>{e(s.job.title)}</b><p>{e(s.judgment['proposal_opener'])}</p></div>"
-                      for s in r.shortlist)
+    openers = "".join(
+        f"<div class='op'><b>{i}. <a href='{e(s.job.url)}'>{e(s.job.title)}</a></b> · {e(s.verdict)} {s.total:.0f}/100"
+        f"<p>{e(s.judgment['why_selected'])}</p><p><b>Proof:</b> {e('; '.join(s.judgment['dossier_evidence']))}</p>"
+        f"<p><b>Watch out:</b> {e('; '.join(s.judgment['risks']) or 'nothing major')}</p>"
+        f"<p><b>Opening lines:</b> {e(s.judgment['proposal_opener'])}</p></div>"
+        for i, s in enumerate(r.shortlist, 1))
     excl = Counter(x.gate for x in r.excluded)
     audit_html = ""
     if audit and r.excluded:
@@ -120,7 +130,7 @@ th{{background:var(--card);position:sticky;top:0}} a{{color:var(--acc)}}
 <h1>Upwork shortlist: {e(r.profile.name)}</h1><div class="mute">Run {at:%Y-%m-%d %H:%M} UTC · {len(r.shortlist)} actionable · scores are {e(r.metric_name)}</div>
 <h2>Student profile</h2><p><b>{e(r.profile.positioning)}</b></p><ul>{prof}</ul>
 <h2>Actionable jobs</h2><div class="wrap">{body}</div>
-{"<h2>Proposal openers</h2>" + openers if openers else ""}{unver}
+{"<h2>Why each job is right for them</h2>" + openers if openers else ""}{unver}
 <h2>Funnel</h2><p>Discovered {r.stats.get('discovered', 0)} → passed hard gates {r.stats.get('passed_deterministic', 0)} → shortlisted {len(r.shortlist)}.
 Excluded: {e(", ".join(f"{g} {n}" for g, n in excl.most_common()) or "none")}</p>{audit_html}
 </body></html>"""
