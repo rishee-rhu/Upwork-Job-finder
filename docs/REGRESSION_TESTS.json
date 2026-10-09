@@ -1,0 +1,32 @@
+{
+  "regression_tests": [
+    {
+      "condition": "Upwork page says Access denied / private / invite-only",
+      "expected": "EXCLUDE before scoring"
+    },
+    {
+      "condition": "Upwork page says This job is no longer available",
+      "expected": "EXCLUDE before scoring"
+    },
+    {
+      "condition": "Job URL redirects to generic Upwork jobs/search/home",
+      "expected": "EXCLUDE before scoring"
+    },
+    {
+      "condition": "Search-engine snippet is accessible but current Upwork page is unavailable/private",
+      "expected": "Trust current Upwork state; EXCLUDE"
+    },
+    {
+      "condition": "Job is weeks/months/quarters old",
+      "expected": "Normally EXCLUDE from fresh opportunity output"
+    },
+    {
+      "condition": "High skill match but mandatory recent case studies are not evidenced",
+      "expected": "EXCLUDE or severe downgrade"
+    },
+    {
+      "condition": "Generic lead-gen job vs healthcare/recruiting + sales job",
+      "expected": "Prefer differentiated niche intersection when other factors are comparable"
+    }
+  ]
+}

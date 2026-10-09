@@ -1,0 +1,46 @@
+{
+  "name": "Somya Kumar",
+  "positioning": "AI-Powered Sales & Lead Generation Consultant",
+  "country": "India",
+  "years_experience": 12,
+  "languages": ["English", "Hindi"],
+  "domains": ["healthcare", "medical records / case management", "IT sales", "locum doctor recruiting", "mortgage lead generation"],
+  "strengths": ["closing", "client-facing sales", "recruiting", "outbound lead generation", "managing a 7-8 person lead-gen team"],
+  "evidence": [
+    "~12 years of US/UK/Europe-facing client work",
+    "Healthcare medical records and case-management background",
+    "Locum doctor recruiting including compliance checks",
+    "IT sales experience",
+    "Built and ran a 7-8 person lead-generation team",
+    "Closing is the strongest stated skill",
+    "Has worked on priced-per-result (pay-per-lead) arrangements"
+  ],
+  "weak_or_unproven": [
+    "Recent public case studies with metrics",
+    "Advanced AI engineering",
+    "Data engineering",
+    "Cold-email infrastructure at scale (domains, warmup, deliverability)",
+    "Large recent SaaS portfolio",
+    "Advanced automation builds"
+  ],
+  "tools": ["LinkedIn", "CRM pipelines", "basic AI writing tools"],
+  "differentiators": [
+    "healthcare + SDR/sales",
+    "recruiting/staffing + outbound business development",
+    "lead generation + closing",
+    "US/UK-facing sales delivered from India"
+  ],
+  "search_queries": [
+    "lead generation", "B2B lead generation", "cold email", "email outreach", "appointment setter",
+    "appointment setting", "SDR", "BDR", "outbound sales", "business development", "prospecting",
+    "sales closer", "LinkedIn lead generation", "AI lead generation", "sales automation", "Apollo",
+    "Sales Navigator", "healthcare lead generation", "healthcare sales", "medical staffing",
+    "medical recruiting", "locum recruiting", "staffing lead generation", "healthcare appointment setter",
+    "recruiting business development"
+  ],
+  "allow_commission": true,
+  "allow_calls": true,
+  "min_hourly": null,
+  "min_fixed": null,
+  "upwork": null
+}

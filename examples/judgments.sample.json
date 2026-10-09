@@ -1,0 +1,67 @@
+{
+ "100000000000000a1": {
+  "hard_eligible": true,
+  "failed_requirements": [],
+  "direct_match": 18,
+  "evidence_match": 17,
+  "differentiation": 11,
+  "requirement_gaps": 5,
+  "capability_fit": "High",
+  "evidence_fit": "High",
+  "commission_structure": "paid_plus_commission",
+  "proposal_feasible": true,
+  "proposal_opener": "I've spent years on both sides of healthcare staffing: recruiting locum doctors (including compliance checks) and running a 7-8 person outbound team for US clients. I know how to get past hospital gatekeepers to the people who actually approve agency staff.",
+  "why_selected": "Healthcare + recruiting + SDR intersection; low competition",
+  "dossier_evidence": [
+   "locum recruiting + compliance",
+   "7-8 person lead-gen team",
+   "US-facing work"
+  ],
+  "risks": [
+   "No recent public case study with booked-meeting numbers"
+  ]
+ },
+ "100000000000000a2": {
+  "hard_eligible": true,
+  "failed_requirements": [],
+  "direct_match": 15,
+  "evidence_match": 11,
+  "differentiation": 4,
+  "requirement_gaps": 4,
+  "capability_fit": "High",
+  "evidence_fit": "Medium",
+  "commission_structure": "none",
+  "proposal_feasible": true,
+  "proposal_opener": "I've sold IT services to US/UK buyers and ran a 7-8 person team doing exactly this kind of list building and outreach.",
+  "why_selected": "IT sales background fits buyer persona",
+  "dossier_evidence": [
+   "IT sales",
+   "lead-gen team lead"
+  ],
+  "risks": [
+   "Apollo depth not evidenced",
+   "12 proposals already"
+  ]
+ },
+ "100000000000000a3": {
+  "hard_eligible": false,
+  "failed_requirements": [
+   "3 recent SaaS cold-email case studies",
+   "cold email infrastructure at scale"
+  ],
+  "direct_match": 10,
+  "evidence_match": 3,
+  "differentiation": 1,
+  "requirement_gaps": 0,
+  "capability_fit": "Medium",
+  "evidence_fit": "Low",
+  "commission_structure": "none",
+  "proposal_feasible": false,
+  "proposal_opener": "Can't meet mandatory case-study requirement honestly.",
+  "why_selected": "",
+  "dossier_evidence": [],
+  "risks": [
+   "mandatory proof missing"
+  ]
+ }
+}
