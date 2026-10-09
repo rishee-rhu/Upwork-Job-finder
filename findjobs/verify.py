@@ -209,8 +209,13 @@ class BrowserVerifier:
         self._pw.stop()
 
 
-def save_login_state(path: str, executable_path: Optional[str] = None) -> None:
-    """Open a visible browser, let the user log in to Upwork, then save cookies."""
+def save_login_state(path: str, executable_path: Optional[str] = None, interactive: bool = True,
+                     timeout_s: int = 600) -> bool:
+    """Open a visible browser, let the user log in to Upwork, then save cookies.
+    interactive=False (web UI) waits until the browser leaves the login pages instead of
+    asking for Enter. Returns True if a logged-in session was saved."""
+    import time
+
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as pw:
@@ -221,6 +226,23 @@ def save_login_state(path: str, executable_path: Optional[str] = None) -> None:
         ctx = browser.new_context()
         page = ctx.new_page()
         page.goto("https://www.upwork.com/ab/account-security/login")
-        input("Log in to Upwork in the browser window, then press Enter here... ")
-        ctx.storage_state(path=path)
+        ok = True
+        if interactive:
+            input("Log in to Upwork in the browser window, then press Enter here... ")
+        else:
+            ok = False
+            end = time.time() + timeout_s
+            while time.time() < end:
+                try:
+                    url = page.url
+                except Exception:  # window closed
+                    break
+                if "upwork.com" in url and "/ab/account-security" not in url and "login" not in url:
+                    page.wait_for_timeout(3000)  # let post-login redirects settle cookies
+                    ok = True
+                    break
+                page.wait_for_timeout(1000)
+        if ok:
+            ctx.storage_state(path=path)
         browser.close()
+        return ok

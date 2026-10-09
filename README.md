@@ -21,7 +21,21 @@ export APIFY_TOKEN=... APIFY_ACTOR=... # live job search (any Upwork scraper act
 python -m findjobs login              # log in to Upwork once; saves upwork_state.json
 ```
 
-## Use
+## Use: web interface (easiest)
+
+```bash
+python -m findjobs ui
+```
+
+This opens http://127.0.0.1:8765 with 4 steps:
+1. **Settings:** Anthropic key, Apify token and actor, and a "Log in to Upwork" button.
+2. **Profile:** upload a dossier and extract it, or pick an example. Edit the JSON before saving.
+3. **Find jobs:** Apify queries and/or an uploaded jobs file, plus run options.
+4. **Results:** live log, funnel numbers and the report inline. If there's no Claude key, it also has a download/upload loop for judgments.
+
+Keys and files stay in `workspace/` on your machine. The server only listens on localhost.
+
+## Use: command line
 
 ```bash
 python -m findjobs run --dossier somya.pdf --apify --state upwork_state.json --audit

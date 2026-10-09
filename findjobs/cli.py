@@ -45,30 +45,31 @@ def cmd_login(a: argparse.Namespace) -> None:
     _log(f"Saved Upwork session to {a.state}. Keep it private (it's your login cookie).")
 
 
-def _load_profile(a: argparse.Namespace) -> Profile:
+def _load_profile(a: argparse.Namespace, log=_log) -> Profile:
     if a.profile:
         return Profile.load(a.profile)
     if not a.dossier:
-        sys.exit("Need --profile or --dossier.")
+        raise ValueError("Need --profile or --dossier.")
     from .judge import extract_profile
 
-    _log("Extracting profile from dossier...")
+    log("Extracting profile from dossier...")
     p = extract_profile(read_dossier_text(a.dossier))
     out = Path(a.out_dir) / "profile.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     p.save(out)
-    _log(f"Profile saved to {out}")
+    log(f"Profile saved to {out}")
     return p
 
 
-def cmd_run(a: argparse.Namespace) -> None:
+def execute_run(a: argparse.Namespace, log=_log) -> pipeline.RunResult:
+    """Shared by the CLI and the web UI. Writes report.md/html, results.json into a.out_dir."""
     from .judge import ApiJudge, FileJudge, write_judge_requests
     from .models import Job
     from .sources import load_file
 
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    profile = _load_profile(a)
+    profile = _load_profile(a, log)
 
     jobs: list[Job] = []
     for f in a.jobs or []:
@@ -79,10 +80,11 @@ def cmd_run(a: argparse.Namespace) -> None:
 
         tpl = json.loads(Path(a.apify_input).read_text()) if a.apify_input else None
         queries = a.query or profile.search_queries or DEFAULT_QUERIES
-        _log(f"Searching Apify with {len(queries)} queries...")
+        log(f"Searching Apify with {len(queries)} queries...")
         jobs += apify.search(queries, template=tpl)
+        log(f"Apify returned {len(jobs)} jobs.")
     if not jobs:
-        sys.exit("No jobs to screen. Pass --jobs FILE and/or --apify.")
+        raise ValueError("No jobs to screen. Pass --jobs FILE and/or --apify.")
 
     verifier = None
     if not a.no_verify:
@@ -92,7 +94,7 @@ def cmd_run(a: argparse.Namespace) -> None:
             verifier = BrowserVerifier(storage_state=a.state, headless=not a.headed,
                                        executable_path=a.chromium or os.environ.get("FINDJOBS_CHROMIUM"))
         except Exception as e:
-            _log(f"Browser verifier unavailable ({e}). Jobs can't be verified, so none will be recommended.")
+            log(f"Browser verifier unavailable ({e}). Jobs can't be verified, so none will be recommended.")
 
     if a.judgments:
         judge = FileJudge(a.judgments)
@@ -103,7 +105,7 @@ def cmd_run(a: argparse.Namespace) -> None:
 
     try:
         res = pipeline.run(profile, jobs, verifier=verifier, judge=judge, max_results=a.max,
-                           show_unverified=a.show_unverified, log=_log)
+                           show_unverified=a.show_unverified, log=log)
     finally:
         if verifier:
             verifier.close()
@@ -112,16 +114,31 @@ def cmd_run(a: argparse.Namespace) -> None:
     keep = [x.job for x in res.shortlist + res.unverified] + res.pending_judgment
     (out / "jobs.verified.json").write_text(json.dumps([j.to_dict() for j in keep], indent=1))
 
+    (out / "judge_requests.json").unlink(missing_ok=True)
     if res.pending_judgment:
         write_judge_requests(profile, res.pending_judgment, out / "judge_requests.json")
-        _log(f"No judge available: wrote {out / 'judge_requests.json'}. Fill judgments.json, then rerun with\n"
+        log(f"No judge available: wrote {out / 'judge_requests.json'}. Fill judgments.json, then rerun with\n"
              f"  --jobs {out / 'jobs.verified.json'} --judgments judgments.json")
 
     (out / "report.md").write_text(report.to_markdown(res, audit=a.audit))
     (out / "report.html").write_text(report.to_html(res, audit=a.audit))
     (out / "results.json").write_text(report.to_json(res))
-    _log(f"Done: {len(res.shortlist)} actionable. See {out / 'report.md'} / report.html")
+    log(f"Done: {len(res.shortlist)} actionable. See {out / 'report.md'} / report.html")
+    return res
+
+
+def cmd_run(a: argparse.Namespace) -> None:
+    try:
+        res = execute_run(a)
+    except ValueError as e:
+        sys.exit(str(e))
     print(report.to_markdown(res, audit=a.audit))
+
+
+def cmd_ui(a: argparse.Namespace) -> None:
+    from .web import serve
+
+    serve(a.port, a.workspace, open_browser=not a.no_browser)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -156,6 +173,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--audit", action="store_true", help="include every excluded job and why")
     p.add_argument("--out-dir", default="out")
     p.set_defaults(fn=cmd_run)
+
+    p = sub.add_parser("ui", help="local web interface (http://127.0.0.1:8765)")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--workspace", default="workspace", help="where settings, uploads and results live")
+    p.add_argument("--no-browser", action="store_true")
+    p.set_defaults(fn=cmd_ui)
 
     a = ap.parse_args(argv)
     a.fn(a)
